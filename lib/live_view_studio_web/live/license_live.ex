@@ -6,7 +6,17 @@ defmodule LiveViewStudioWeb.LicenseLive do
   import Inflex, only: [inflect: 2]
 
   def mount(_params, _session, socket) do
-    socket = assign(socket, seats: 2, amount: Licenses.calculate(2))
+    if connected?(socket), do: tock()
+    expiration_time = Timex.shift(Timex.now(), hours: 1)
+
+    socket =
+      assign(socket,
+        seats: 2,
+        amount: Licenses.calculate(2),
+        expiration_time: expiration_time,
+        time_remaining: time_remaining(expiration_time)
+      )
+
     {:ok, socket}
   end
 
@@ -23,6 +33,7 @@ defmodule LiveViewStudioWeb.LicenseLive do
               <strong><%=@seats %></strong> <%= inflect("seat", @seats) %>.
              </span>
           </div>
+          <div>You have <%= @time_remaining %> left.</div>
           <form phx-change="update">
             <input type="range" min="1" max="10" name="seats"
               value="<%=@seats %>"/>
@@ -41,5 +52,23 @@ defmodule LiveViewStudioWeb.LicenseLive do
 
     socket = assign(socket, seats: seats, amount: Licenses.calculate(seats))
     {:noreply, socket}
+  end
+
+  def handle_info(:tick, socket) do
+    tock()
+    %{expiration_time: expiration_time} = socket.assigns
+    time_remaining = time_remaining(expiration_time)
+    {:noreply, assign(socket, time_remaining: time_remaining)}
+  end
+
+  defp time_remaining(expiration_time) do
+    Timex.Interval.new(from: Timex.now(), until: expiration_time)
+    |> Timex.Interval.duration(:seconds)
+    |> Timex.Duration.from_seconds()
+    |> Timex.format_duration(:humanized)
+  end
+
+  defp tock do
+    Process.send_after(self(), :tick, 1000)
   end
 end
